@@ -1,4 +1,4 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is a [Next.js](https://nextjs.org) project for the NDSC Council Area, bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app) and configured with Prisma.
 
 ## Getting Started
 
@@ -16,7 +16,25 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
+
+## Database
+
+Prisma is configured for PostgreSQL.
+
+1. Copy `.env.example` to `.env`.
+2. Set `DATABASE_URL` to your Postgres connection string.
+3. Add models in `prisma/schema.prisma`.
+4. Run `npm run prisma:migrate` to create and apply a migration.
+
+Useful commands:
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:push
+npm run prisma:studio
+```
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
