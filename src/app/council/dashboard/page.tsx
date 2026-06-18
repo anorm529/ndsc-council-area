@@ -106,23 +106,26 @@ export default async function DashboardPage() {
   const CURRENT_YEAR = new Date().getFullYear()
   const totalClubMembers = genderGroups.reduce((s, g) => s + g._count.id, 0)
 
-  // Gender rows sorted: male, female, then everything else alphabetically
-  const GENDER_ORDER = ['male', 'female']
+  // Normalise gender casing — DB may have "Male"/"male", "Female"/"female" etc.
+  const genderNorm = new Map<string, number>()
+  for (const r of genderGroups) {
+    const key = (r.gender ?? '').trim().toLowerCase() || ''
+    genderNorm.set(key, (genderNorm.get(key) ?? 0) + r._count.id)
+  }
+
+  const GENDER_ORDER = ['male', 'female', 'non-binary', 'prefer not to say']
   const genderRows = [
-    ...GENDER_ORDER
-      .map((g) => genderGroups.find((r) => (r.gender ?? 'unknown') === g))
-      .filter(Boolean),
-    ...genderGroups.filter(
-      (r) => !GENDER_ORDER.includes(r.gender ?? 'unknown') && (r.gender ?? 'unknown') !== 'unknown'
-    ),
-    ...genderGroups.filter((r) => !r.gender),
-  ].map((r) => ({
-    label: r!.gender
-      ? r!.gender.charAt(0).toUpperCase() + r!.gender.slice(1)
-      : 'Not specified',
-    count: r!._count.id,
-    pct: totalClubMembers > 0 ? Math.round((r!._count.id / totalClubMembers) * 100) : 0,
-  }))
+    ...GENDER_ORDER.filter((g) => genderNorm.has(g)),
+    ...[...genderNorm.keys()].filter((k) => k && !GENDER_ORDER.includes(k)),
+    ...(genderNorm.has('') ? [''] : []),
+  ].map((key) => {
+    const count = genderNorm.get(key) ?? 0
+    return {
+      label: key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Not specified',
+      count,
+      pct: totalClubMembers > 0 ? Math.round((count / totalClubMembers) * 100) : 0,
+    }
+  })
 
   const GENDER_COLOURS: Record<string, string> = {
     Male: 'bg-blue-400',
@@ -142,8 +145,9 @@ export default async function DashboardPage() {
     const name = t.currentTeamName!
     const total = t._count.id
     const genders = teamGenderGroups.filter((g) => g.currentTeamName === name)
-    const male = genders.find((g) => g.gender === 'male')?._count.id ?? 0
-    const female = genders.find((g) => g.gender === 'female')?._count.id ?? 0
+    // normalise casing before counting
+    const male = genders.filter((g) => (g.gender ?? '').toLowerCase() === 'male').reduce((s, g) => s + g._count.id, 0)
+    const female = genders.filter((g) => (g.gender ?? '').toLowerCase() === 'female').reduce((s, g) => s + g._count.id, 0)
     const other = total - male - female
     const meta = TEAM_META[name] ?? { label: name, bar: 'bg-slate-400', badge: 'bg-slate-100 text-slate-700' }
     return { name, total, male, female, other, meta }
