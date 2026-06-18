@@ -35,6 +35,7 @@ export default async function EditMemberPage({
 
   // Fetch unmatched players from main DB (players not yet linked to any council member)
   let unmatchedPlayers: UnmatchedPlayer[] = []
+  let mainDbReachable = false
   const pool = getMainPool()
   if (pool && !member.isNonPlayer) {
     try {
@@ -56,8 +57,9 @@ export default async function EditMemberPage({
         [id]
       )
       unmatchedPlayers = result.rows
-    } catch {
-      // Main DB unavailable — fall back to manual UUID input only
+      mainDbReachable = true
+    } catch (err) {
+      console.error('[edit-member] main DB query failed:', err)
     }
   }
 
@@ -144,6 +146,16 @@ export default async function EditMemberPage({
             )}
 
             {/* Unmatched player picker — only shown when main DB is reachable */}
+            {pool && !mainDbReachable && !member.isNonPlayer && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                Could not connect to main database — player dropdown unavailable. Use the UUID input below or check that <code className="font-mono">MAIN_DATABASE_URL</code> is set.
+              </p>
+            )}
+            {!pool && !member.isNonPlayer && (
+              <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded px-3 py-2">
+                <code className="font-mono">MAIN_DATABASE_URL</code> is not configured — player dropdown unavailable.
+              </p>
+            )}
             {unmatchedPlayers.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
