@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +8,475 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+model CouncilMember {
+  id             String    @id @default(uuid())
+  externalUserId String?   @map("external_user_id")
+  playerId       String?   @map("player_id")
+  name           String
+  email          String?
+  role           String
+  isActive       Boolean   @default(true) @map("is_active")
+  joinedAt       DateTime? @map("joined_at") @db.Date
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  permissions           CouncilPermission[]
+  chairedMeetings       CouncilMeeting[]         @relation("ChairMember")
+  minuteTakenMeetings   CouncilMeeting[]         @relation("MinuteTakerMember")
+  meetingAttendances    CouncilMeetingAttendee[]
+  ownedActions          CouncilAction[]          @relation("ActionOwner")
+  proposedDecisions     CouncilDecision[]        @relation("DecisionProposer")
+  officerReports        CouncilOfficerReport[]   @relation("ReportAuthor")
+  submittedFinanceItems CouncilFinanceItem[]     @relation("FinanceSubmitter")
+  approvedFinanceItems  CouncilFinanceItem[]     @relation("FinanceApprover")
+  captainTeamReports    CouncilTeamReport[]      @relation("TeamReportCaptain")
+  reportedWelfareCases  CouncilWelfareCase[]     @relation("WelfareCaseReporter")
+  assignedWelfareCases  CouncilWelfareCase[]     @relation("WelfareCaseAssignee")
+  assignedEquipment     CouncilEquipment[]       @relation("EquipmentAssignee")
+  ledEvents             CouncilEvent[]           @relation("EventLead")
+  ownedEventTasks       CouncilEventTask[]       @relation("EventTaskOwner")
+  ownedGrants           CouncilGrant[]           @relation("GrantOwner")
+  ownedSponsorships     CouncilSponsorship[]     @relation("SponsorshipOwner")
+  ownedCommunications   CouncilCommunication[]   @relation("CommunicationOwner")
+  ownedDocuments        CouncilDocument[]        @relation("DocumentOwner")
+  auditLogs             CouncilAuditLog[]
+
+  @@map("council_members")
+}
+
+model CouncilPermission {
+  id              String        @id @default(uuid())
+  councilMemberId String        @map("council_member_id")
+  permissionKey   String        @map("permission_key")
+  granted         Boolean       @default(true)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  member CouncilMember @relation(fields: [councilMemberId], references: [id], onDelete: Cascade)
+
+  @@map("council_permissions")
+}
+
+model CouncilMeeting {
+  id            String    @id @default(uuid())
+  title         String
+  meetingType   String?   @map("meeting_type")
+  meetingDate   DateTime  @map("meeting_date") @db.Date
+  startTime     String?   @map("start_time")
+  endTime       String?   @map("end_time")
+  location      String?
+  status        String    @default("draft")
+  chairId       String?   @map("chair_id")
+  minuteTakerId String?   @map("minute_taker_id")
+  agenda        String?
+  minutes       String?
+  summary       String?
+  approved      Boolean   @default(false)
+  approvedAt    DateTime? @map("approved_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  chair          CouncilMember?           @relation("ChairMember", fields: [chairId], references: [id])
+  minuteTaker    CouncilMember?           @relation("MinuteTakerMember", fields: [minuteTakerId], references: [id])
+  attendees      CouncilMeetingAttendee[]
+  actions        CouncilAction[]          @relation("MeetingAction")
+  decisions      CouncilDecision[]        @relation("MeetingDecision")
+  officerReports CouncilOfficerReport[]   @relation("MeetingReport")
+  teamReports    CouncilTeamReport[]      @relation("MeetingTeamReport")
+
+  @@index([meetingDate])
+  @@index([status])
+  @@map("council_meetings")
+}
+
+model CouncilMeetingAttendee {
+  id               String   @id @default(uuid())
+  meetingId        String   @map("meeting_id")
+  councilMemberId  String   @map("council_member_id")
+  attendanceStatus String   @map("attendance_status")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  meeting CouncilMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member  CouncilMember  @relation(fields: [councilMemberId], references: [id])
+
+  @@map("council_meeting_attendees")
+}
+
+model CouncilAction {
+  id               String    @id @default(uuid())
+  title            String
+  description      String?
+  ownerId          String?   @map("owner_id")
+  relatedMeetingId String?   @map("related_meeting_id")
+  category         String?
+  priority         String    @default("medium")
+  status           String    @default("not_started")
+  dueDate          DateTime? @map("due_date") @db.Date
+  completedAt      DateTime? @map("completed_at")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  owner          CouncilMember?    @relation("ActionOwner", fields: [ownerId], references: [id])
+  relatedMeeting CouncilMeeting?   @relation("MeetingAction", fields: [relatedMeetingId], references: [id])
+  decisions      CouncilDecision[] @relation("DecisionFollowUp")
+
+  @@index([status])
+  @@index([ownerId])
+  @@index([dueDate])
+  @@index([relatedMeetingId])
+  @@map("council_actions")
+}
+
+model CouncilDecision {
+  id               String    @id @default(uuid())
+  title            String
+  decisionDate     DateTime  @map("decision_date") @db.Date
+  description      String?
+  rationale        String?
+  outcome          String?
+  relatedMeetingId String?   @map("related_meeting_id")
+  proposedById     String?   @map("proposed_by_id")
+  status           String    @default("proposed")
+  voteFor          Int?      @map("vote_for")
+  voteAgainst      Int?      @map("vote_against")
+  voteAbstain      Int?      @map("vote_abstain")
+  followUpActionId String?   @map("follow_up_action_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  relatedMeeting CouncilMeeting? @relation("MeetingDecision", fields: [relatedMeetingId], references: [id])
+  proposedBy     CouncilMember?  @relation("DecisionProposer", fields: [proposedById], references: [id])
+  followUpAction CouncilAction?  @relation("DecisionFollowUp", fields: [followUpActionId], references: [id])
+
+  @@index([decisionDate])
+  @@index([status])
+  @@index([relatedMeetingId])
+  @@map("council_decisions")
+}
+
+model CouncilOfficerReport {
+  id                   String    @id @default(uuid())
+  title                String
+  reportType           String    @map("report_type")
+  authorId             String    @map("author_id")
+  relatedMeetingId     String?   @map("related_meeting_id")
+  reportingPeriodStart DateTime? @map("reporting_period_start") @db.Date
+  reportingPeriodEnd   DateTime? @map("reporting_period_end") @db.Date
+  content              String
+  highlights           String?
+  risks                String?
+  requests             String?
+  status               String    @default("draft")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  author         CouncilMember   @relation("ReportAuthor", fields: [authorId], references: [id])
+  relatedMeeting CouncilMeeting? @relation("MeetingReport", fields: [relatedMeetingId], references: [id])
+
+  @@index([status])
+  @@index([authorId])
+  @@index([relatedMeetingId])
+  @@map("council_officer_reports")
+}
+
+model CouncilFinanceItem {
+  id            String   @id @default(uuid())
+  title         String
+  description   String?
+  itemType      String   @map("item_type")
+  amount        Decimal  @db.Decimal(10, 2)
+  currency      String   @default("GBP")
+  itemDate      DateTime @map("item_date") @db.Date
+  category      String?
+  status        String   @default("pending")
+  submittedById String?  @map("submitted_by_id")
+  approvedById  String?  @map("approved_by_id")
+  relatedEventId String? @map("related_event_id")
+  receiptUrl    String?  @map("receipt_url")
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  submittedBy CouncilMember? @relation("FinanceSubmitter", fields: [submittedById], references: [id])
+  approvedBy  CouncilMember? @relation("FinanceApprover", fields: [approvedById], references: [id])
+
+  @@index([itemDate])
+  @@index([status])
+  @@index([submittedById])
+  @@map("council_finance_items")
+}
+
+model CouncilMembershipSnapshot {
+  id              String   @id @default(uuid())
+  snapshotDate    DateTime @map("snapshot_date") @db.Date
+  totalMembers    Int?     @map("total_members")
+  maleMembers     Int?     @map("male_members")
+  femaleMembers   Int?     @map("female_members")
+  rookies         Int?
+  paidMembers     Int?     @map("paid_members")
+  unpaidMembers   Int?     @map("unpaid_members")
+  activePlayers   Int?     @map("active_players")
+  inactivePlayers Int?     @map("inactive_players")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([snapshotDate])
+  @@map("council_membership_snapshots")
+}
+
+model CouncilTeamReport {
+  id                String   @id @default(uuid())
+  teamSlug          String   @map("team_slug")
+  title             String
+  captainId         String?  @map("captain_id")
+  relatedMeetingId  String?  @map("related_meeting_id")
+  reportDate        DateTime @map("report_date") @db.Date
+  squadUpdate       String?  @map("squad_update")
+  performanceUpdate String?  @map("performance_update")
+  issues            String?
+  equipmentNeeds    String?  @map("equipment_needs")
+  playerConcerns    String?  @map("player_concerns")
+  requests          String?
+  status            String   @default("draft")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  captain        CouncilMember?  @relation("TeamReportCaptain", fields: [captainId], references: [id])
+  relatedMeeting CouncilMeeting? @relation("MeetingTeamReport", fields: [relatedMeetingId], references: [id])
+
+  @@index([teamSlug])
+  @@index([status])
+  @@map("council_team_reports")
+}
+
+model CouncilWelfareCase {
+  id                String    @id @default(uuid())
+  title             String
+  caseType          String    @map("case_type")
+  incidentDate      DateTime? @map("incident_date") @db.Date
+  reportedDate      DateTime  @map("reported_date") @db.Date
+  reportedById      String?   @map("reported_by_id")
+  assignedToId      String?   @map("assigned_to_id")
+  status            String    @default("open")
+  severity          String    @default("low")
+  summary           String?
+  actionsTaken      String?   @map("actions_taken")
+  followUpRequired  Boolean   @default(false) @map("follow_up_required")
+  followUpDate      DateTime? @map("follow_up_date") @db.Date
+  confidentialNotes String?   @map("confidential_notes")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  reportedBy CouncilMember? @relation("WelfareCaseReporter", fields: [reportedById], references: [id])
+  assignedTo CouncilMember? @relation("WelfareCaseAssignee", fields: [assignedToId], references: [id])
+
+  @@index([status])
+  @@index([assignedToId])
+  @@map("council_welfare_cases")
+}
+
+model CouncilEquipment {
+  id                String    @id @default(uuid())
+  itemName          String    @map("item_name")
+  category          String?
+  quantity          Int       @default(1)
+  condition         String?   @default("good")
+  assignedToId      String?   @map("assigned_to_id")
+  teamSlug          String?   @map("team_slug")
+  storageLocation   String?   @map("storage_location")
+  purchaseDate      DateTime? @map("purchase_date") @db.Date
+  purchaseCost      Decimal?  @map("purchase_cost") @db.Decimal(10, 2)
+  supplier          String?
+  replacementNeeded Boolean   @default(false) @map("replacement_needed")
+  lastChecked       DateTime? @map("last_checked") @db.Date
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  assignedTo CouncilMember? @relation("EquipmentAssignee", fields: [assignedToId], references: [id])
+
+  @@index([teamSlug])
+  @@index([assignedToId])
+  @@map("council_equipment")
+}
+
+model CouncilEvent {
+  id          String    @id @default(uuid())
+  title       String
+  eventType   String?   @map("event_type")
+  eventDate   DateTime? @map("event_date") @db.Date
+  startTime   String?   @map("start_time")
+  endTime     String?   @map("end_time")
+  location    String?
+  leadId      String?   @map("lead_id")
+  status      String    @default("idea")
+  budget      Decimal?  @db.Decimal(10, 2)
+  description String?
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  lead           CouncilMember?         @relation("EventLead", fields: [leadId], references: [id])
+  tasks          CouncilEventTask[]
+  communications CouncilCommunication[] @relation("EventCommunication")
+
+  @@index([eventDate])
+  @@index([status])
+  @@index([leadId])
+  @@map("council_events")
+}
+
+model CouncilEventTask {
+  id          String    @id @default(uuid())
+  eventId     String    @map("event_id")
+  title       String
+  description String?
+  ownerId     String?   @map("owner_id")
+  status      String    @default("not_started")
+  priority    String    @default("medium")
+  dueDate     DateTime? @map("due_date") @db.Date
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  event CouncilEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  owner CouncilMember? @relation("EventTaskOwner", fields: [ownerId], references: [id])
+
+  @@index([dueDate])
+  @@index([ownerId])
+  @@map("council_event_tasks")
+}
+
+model CouncilGrant {
+  id                String    @id @default(uuid())
+  grantName         String    @map("grant_name")
+  provider          String?
+  amountRequested   Decimal?  @map("amount_requested") @db.Decimal(10, 2)
+  amountAwarded     Decimal?  @map("amount_awarded") @db.Decimal(10, 2)
+  deadline          DateTime? @db.Date
+  submittedDate     DateTime? @map("submitted_date") @db.Date
+  outcomeDate       DateTime? @map("outcome_date") @db.Date
+  status            String    @default("researching")
+  ownerId           String?   @map("owner_id")
+  purpose           String?
+  requiredDocuments String?   @map("required_documents")
+  reportingDeadline DateTime? @map("reporting_deadline") @db.Date
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  owner CouncilMember? @relation("GrantOwner", fields: [ownerId], references: [id])
+
+  @@index([deadline])
+  @@index([status])
+  @@index([ownerId])
+  @@map("council_grants")
+}
+
+model CouncilSponsorship {
+  id            String    @id @default(uuid())
+  sponsorName   String    @map("sponsor_name")
+  contactName   String?   @map("contact_name")
+  contactEmail  String?   @map("contact_email")
+  packageName   String?   @map("package_name")
+  value         Decimal?  @db.Decimal(10, 2)
+  startDate     DateTime? @map("start_date") @db.Date
+  endDate       DateTime? @map("end_date") @db.Date
+  renewalDate   DateTime? @map("renewal_date") @db.Date
+  invoiceStatus String?   @map("invoice_status")
+  deliverables  String?
+  status        String    @default("prospect")
+  ownerId       String?   @map("owner_id")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  owner CouncilMember? @relation("SponsorshipOwner", fields: [ownerId], references: [id])
+
+  @@index([renewalDate])
+  @@index([status])
+  @@index([ownerId])
+  @@map("council_sponsorships")
+}
+
+model CouncilCommunication {
+  id              String    @id @default(uuid())
+  title           String
+  channel         String?
+  contentType     String?   @map("content_type")
+  plannedDate     DateTime? @map("planned_date") @db.Date
+  publishDate     DateTime? @map("publish_date") @db.Date
+  ownerId         String?   @map("owner_id")
+  status          String    @default("idea")
+  relatedTeamSlug String?   @map("related_team_slug")
+  relatedEventId  String?   @map("related_event_id")
+  copy            String?
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  owner        CouncilMember? @relation("CommunicationOwner", fields: [ownerId], references: [id])
+  relatedEvent CouncilEvent?  @relation("EventCommunication", fields: [relatedEventId], references: [id])
+
+  @@index([plannedDate])
+  @@index([status])
+  @@index([ownerId])
+  @@map("council_communications")
+}
+
+model CouncilDocument {
+  id             String    @id @default(uuid())
+  title          String
+  documentType   String?   @map("document_type")
+  version        String?
+  documentUrl    String?   @map("document_url")
+  ownerId        String?   @map("owner_id")
+  status         String    @default("draft")
+  lastReviewed   DateTime? @map("last_reviewed") @db.Date
+  nextReviewDate DateTime? @map("next_review_date") @db.Date
+  summary        String?
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  owner CouncilMember? @relation("DocumentOwner", fields: [ownerId], references: [id])
+
+  @@index([status])
+  @@index([nextReviewDate])
+  @@index([ownerId])
+  @@map("council_documents")
+}
+
+model CouncilAuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor CouncilMember? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType])
+  @@index([actorId])
+  @@map("council_audit_log")
+}
+
+model CouncilSettings {
+  id           String   @id @default(uuid())
+  settingKey   String   @unique @map("setting_key")
+  settingValue Json?    @map("setting_value")
+  description  String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("council_settings")
 }
