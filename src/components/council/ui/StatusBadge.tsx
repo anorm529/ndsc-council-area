@@ -58,6 +58,7 @@ const STATUS_STYLES: Record<string, string> = {
   // Main DB reconciliation
   linked: 'bg-green-100 text-green-800',
   not_found: 'bg-red-100 text-red-700',
+  non_player: 'bg-slate-100 text-slate-500',
 }
 
 const LABEL_MAP: Record<string, string> = {
@@ -69,6 +70,7 @@ const LABEL_MAP: Record<string, string> = {
   reporting_due: 'Reporting due',
   renewal_due: 'Renewal due',
   not_found: 'Not in main DB',
+  non_player: 'Non-player',
 }
 
 export function StatusBadge({ status }: { status: string }) {

@@ -237,7 +237,9 @@ export default async function MembershipPage({
                       className={`hover:bg-slate-50 ${!m.isActive ? 'opacity-50' : ''} ${isNotFound ? 'bg-red-50/30' : ''}`}
                     >
                       <td className="px-4 py-3 font-medium text-slate-900">
-                        {m.lastName}, {m.firstName}
+                        <Link href={`/council/membership/${m.id}/edit`} className="hover:text-blue-600 hover:underline">
+                          {m.lastName}, {m.firstName}
+                        </Link>
                       </td>
                       <td className="px-4 py-3">
                         {m.currentTeamName ? (

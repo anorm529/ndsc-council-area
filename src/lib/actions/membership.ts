@@ -14,91 +14,115 @@ async function performReconciliation() {
   if (!pool) return
 
   try {
-    const members = await prisma.clubMember.findMany({
-      select: { id: true, firstName: true, lastName: true },
+    const allMembers = await prisma.clubMember.findMany({
+      select: { id: true, firstName: true, lastName: true, isNonPlayer: true, manualPlayerLink: true, mainDbPlayerId: true },
     })
-    if (members.length === 0) return
+    if (allMembers.length === 0) return
 
-    // normalised name → member id
-    const nameToMemberId = new Map<string, string>()
-    for (const m of members) {
-      const key = `${m.firstName.trim()} ${m.lastName.trim()}`.toLowerCase()
-      nameToMemberId.set(key, m.id)
-    }
+    // Non-players: mark status and skip reconciliation
+    const nonPlayerIds = allMembers.filter((m) => m.isNonPlayer).map((m) => m.id)
 
-    const normalizedNames = Array.from(nameToMemberId.keys())
+    // Members with a manual player ID override: refresh team only, don't re-match
+    const manualMembers = allMembers.filter((m) => !m.isNonPlayer && m.manualPlayerLink && m.mainDbPlayerId)
 
-    // 1. Match players by normalized_name
-    const playerResult = await pool.query<{ id: string; normalized_name: string }>(
-      `SELECT id, normalized_name FROM players WHERE normalized_name = ANY($1::text[])`,
-      [normalizedNames]
-    )
+    // Everyone else: name-match against main DB
+    const autoMembers = allMembers.filter((m) => !m.isNonPlayer && !m.manualPlayerLink)
 
-    const nameToPlayerId = new Map<string, string>()
-    for (const row of playerResult.rows) {
-      nameToPlayerId.set(row.normalized_name, row.id)
-    }
-
-    // 2. Active season
+    // 1. Active season
     const seasonResult = await pool.query<{ id: string }>(
       `SELECT id FROM seasons WHERE is_active = true LIMIT 1`
     )
     const activeSeasonId = seasonResult.rows[0]?.id ?? null
 
-    // 3. Team assignments for matched players in active season
-    const matchedPlayerIds = playerResult.rows.map((r) => r.id)
-    const playerIdToTeam = new Map<string, { teamId: string; teamName: string }>()
-
-    if (matchedPlayerIds.length > 0 && activeSeasonId) {
-      const teamResult = await pool.query<{
-        player_id: string
-        team_id: string
-        team_name: string
-      }>(
+    // Helper: get team for a list of player IDs in the active season
+    async function fetchTeams(playerIds: string[]): Promise<Map<string, { teamId: string; teamName: string }>> {
+      const map = new Map<string, { teamId: string; teamName: string }>()
+      if (playerIds.length === 0 || !activeSeasonId) return map
+      const result = await pool!.query<{ player_id: string; team_id: string; team_name: string }>(
         `SELECT pts.player_id, t.id AS team_id, t.name AS team_name
          FROM player_team_seasons pts
          JOIN teams t ON t.id = pts.team_id
          WHERE pts.player_id = ANY($1::uuid[])
            AND pts.season_id = $2`,
-        [matchedPlayerIds, activeSeasonId]
+        [playerIds, activeSeasonId]
       )
-      for (const row of teamResult.rows) {
-        playerIdToTeam.set(row.player_id, { teamId: row.team_id, teamName: row.team_name })
+      for (const row of result.rows) {
+        map.set(row.player_id, { teamId: row.team_id, teamName: row.team_name })
+      }
+      return map
+    }
+
+    // 2. Name-match auto members
+    const nameToMemberId = new Map<string, string>()
+    for (const m of autoMembers) {
+      const key = `${m.firstName.trim()} ${m.lastName.trim()}`.toLowerCase()
+      nameToMemberId.set(key, m.id)
+    }
+
+    const normalizedNames = Array.from(nameToMemberId.keys())
+    const nameToPlayerId = new Map<string, string>()
+
+    if (normalizedNames.length > 0) {
+      const playerResult = await pool.query<{ id: string; normalized_name: string }>(
+        `SELECT id, normalized_name FROM players WHERE normalized_name = ANY($1::text[])`,
+        [normalizedNames]
+      )
+      for (const row of playerResult.rows) {
+        nameToPlayerId.set(row.normalized_name, row.id)
       }
     }
 
+    // 3. Fetch teams for auto-matched + manual members
+    const autoMatchedPlayerIds = Array.from(nameToPlayerId.values())
+    const manualPlayerIds = manualMembers.map((m) => m.mainDbPlayerId as string)
+    const allPlayerIdsForTeam = [...new Set([...autoMatchedPlayerIds, ...manualPlayerIds])]
+    const playerIdToTeam = await fetchTeams(allPlayerIdsForTeam)
+
     // 4. Build update payloads
     const now = new Date()
-    const updates = members.map((m) => {
+    const updates: ReturnType<typeof prisma.clubMember.update>[] = []
+
+    // Non-players
+    for (const id of nonPlayerIds) {
+      updates.push(prisma.clubMember.update({
+        where: { id },
+        data: { mainDbStatus: 'non_player', mainDbPlayerId: null, currentTeamId: null, currentTeamName: null },
+      }))
+    }
+
+    // Manual overrides — refresh team, preserve player ID
+    for (const m of manualMembers) {
+      const team = playerIdToTeam.get(m.mainDbPlayerId!)
+      updates.push(prisma.clubMember.update({
+        where: { id: m.id },
+        data: {
+          mainDbStatus: 'linked',
+          currentTeamId: team?.teamId ?? null,
+          currentTeamName: team?.teamName ?? null,
+          linkedAt: now,
+        },
+      }))
+    }
+
+    // Auto name-matched
+    for (const m of autoMembers) {
       const key = `${m.firstName.trim()} ${m.lastName.trim()}`.toLowerCase()
       const playerId = nameToPlayerId.get(key) ?? null
-
       if (playerId) {
         const team = playerIdToTeam.get(playerId)
-        return prisma.clubMember.update({
+        updates.push(prisma.clubMember.update({
           where: { id: m.id },
-          data: {
-            mainDbPlayerId: playerId,
-            mainDbStatus: 'linked',
-            currentTeamId: team?.teamId ?? null,
-            currentTeamName: team?.teamName ?? null,
-            linkedAt: now,
-          },
-        })
+          data: { mainDbPlayerId: playerId, mainDbStatus: 'linked', currentTeamId: team?.teamId ?? null, currentTeamName: team?.teamName ?? null, linkedAt: now },
+        }))
       } else {
-        return prisma.clubMember.update({
+        updates.push(prisma.clubMember.update({
           where: { id: m.id },
-          data: {
-            mainDbPlayerId: null,
-            mainDbStatus: 'not_found',
-            currentTeamId: null,
-            currentTeamName: null,
-          },
-        })
+          data: { mainDbPlayerId: null, mainDbStatus: 'not_found', currentTeamId: null, currentTeamName: null },
+        }))
       }
-    })
+    }
 
-    // 5. Run in a single transaction instead of parallel queries
+    // 5. Run in a single transaction
     await prisma.$transaction(updates)
   } catch (err) {
     // Log but don't crash the caller — reconciliation is best-effort
@@ -141,6 +165,88 @@ export async function deactivateClubMember(id: string) {
   await requireCouncilAccess()
   await prisma.clubMember.update({ where: { id }, data: { isActive: false } })
   revalidatePath('/council/membership')
+}
+
+export async function updateClubMember(id: string, formData: FormData) {
+  await requireCouncilAccess()
+
+  const firstName = (formData.get('first_name') as string).trim()
+  const lastName = (formData.get('last_name') as string).trim()
+  const email = (formData.get('email') as string)?.trim() || null
+  const yearOfBirthRaw = formData.get('year_of_birth') as string
+  const postcode = (formData.get('postcode') as string)?.trim().toUpperCase() || null
+  const gender = (formData.get('gender') as string)?.trim() || null
+  const isRookie = formData.get('is_rookie') === 'on'
+  const isUmpire = formData.get('is_umpire') === 'on'
+  const isNonPlayer = formData.get('is_non_player') === 'on'
+  const manualPlayerIdRaw = (formData.get('manual_player_id') as string)?.trim() || null
+
+  // Determine link state
+  let mainDbPlayerId: string | null = null
+  let manualPlayerLink = false
+  let mainDbStatus = 'pending'
+  let currentTeamId: string | null = null
+  let currentTeamName: string | null = null
+  let linkedAt: Date | null = null
+
+  if (isNonPlayer) {
+    mainDbStatus = 'non_player'
+  } else if (manualPlayerIdRaw) {
+    // Manual override: try to look up team from main DB right away
+    mainDbPlayerId = manualPlayerIdRaw
+    manualPlayerLink = true
+    mainDbStatus = 'linked'
+    linkedAt = new Date()
+
+    const pool = getMainPool()
+    if (pool) {
+      try {
+        const seasonResult = await pool.query<{ id: string }>(
+          `SELECT id FROM seasons WHERE is_active = true LIMIT 1`
+        )
+        const activeSeasonId = seasonResult.rows[0]?.id ?? null
+        if (activeSeasonId) {
+          const teamResult = await pool.query<{ team_id: string; team_name: string }>(
+            `SELECT t.id AS team_id, t.name AS team_name
+             FROM player_team_seasons pts
+             JOIN teams t ON t.id = pts.team_id
+             WHERE pts.player_id = $1 AND pts.season_id = $2 LIMIT 1`,
+            [manualPlayerIdRaw, activeSeasonId]
+          )
+          if (teamResult.rows[0]) {
+            currentTeamId = teamResult.rows[0].team_id
+            currentTeamName = teamResult.rows[0].team_name
+          }
+        }
+      } catch {
+        // Main DB unavailable — link saved, team will populate on next reconcile
+      }
+    }
+  }
+
+  await prisma.clubMember.update({
+    where: { id },
+    data: {
+      firstName,
+      lastName,
+      email,
+      yearOfBirth: yearOfBirthRaw ? parseInt(yearOfBirthRaw) : null,
+      postcode,
+      gender,
+      isRookie,
+      isUmpire,
+      isNonPlayer,
+      mainDbPlayerId,
+      manualPlayerLink,
+      mainDbStatus,
+      currentTeamId,
+      currentTeamName,
+      linkedAt: linkedAt ?? undefined,
+    },
+  })
+
+  revalidatePath('/council/membership')
+  redirect('/council/membership')
 }
 
 export async function importClubMembers(formData: FormData) {
