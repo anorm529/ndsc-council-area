@@ -179,7 +179,10 @@ export async function updateClubMember(id: string, formData: FormData) {
   const isRookie = formData.get('is_rookie') === 'on'
   const isUmpire = formData.get('is_umpire') === 'on'
   const isNonPlayer = formData.get('is_non_player') === 'on'
+  // player_select (dropdown of unmatched players) takes priority over typed UUID
+  const playerSelectRaw = (formData.get('player_select') as string)?.trim() || null
   const manualPlayerIdRaw = (formData.get('manual_player_id') as string)?.trim() || null
+  const manualPlayerIdFinal = playerSelectRaw || manualPlayerIdRaw || null
 
   // Determine link state
   let mainDbPlayerId: string | null = null
@@ -191,9 +194,9 @@ export async function updateClubMember(id: string, formData: FormData) {
 
   if (isNonPlayer) {
     mainDbStatus = 'non_player'
-  } else if (manualPlayerIdRaw) {
-    // Manual override: try to look up team from main DB right away
-    mainDbPlayerId = manualPlayerIdRaw
+  } else if (manualPlayerIdFinal) {
+    // Manual override (dropdown or typed UUID): try to look up team from main DB right away
+    mainDbPlayerId = manualPlayerIdFinal
     manualPlayerLink = true
     mainDbStatus = 'linked'
     linkedAt = new Date()
@@ -211,7 +214,7 @@ export async function updateClubMember(id: string, formData: FormData) {
              FROM player_team_seasons pts
              JOIN teams t ON t.id = pts.team_id
              WHERE pts.player_id = $1 AND pts.season_id = $2 LIMIT 1`,
-            [manualPlayerIdRaw, activeSeasonId]
+            [manualPlayerIdFinal, activeSeasonId]
           )
           if (teamResult.rows[0]) {
             currentTeamId = teamResult.rows[0].team_id

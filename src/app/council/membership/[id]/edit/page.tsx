@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
+import { getMainPool } from '@/lib/main-db'
 import { PageHeader } from '@/components/council/ui/PageHeader'
 import { FormField, SelectField, SubmitButton } from '@/components/council/ui/FormField'
 import { updateClubMember } from '@/lib/actions/membership'
@@ -21,6 +22,8 @@ const YEAR_OPTIONS = Array.from({ length: 80 }, (_, i) => {
   return { value: String(y), label: String(y) }
 })
 
+type UnmatchedPlayer = { id: string; display_name: string; team_name: string | null }
+
 export default async function EditMemberPage({
   params,
 }: {
@@ -30,7 +33,38 @@ export default async function EditMemberPage({
   const member = await prisma.clubMember.findUnique({ where: { id } })
   if (!member) notFound()
 
+  // Fetch unmatched players from main DB (players not yet linked to any council member)
+  let unmatchedPlayers: UnmatchedPlayer[] = []
+  const pool = getMainPool()
+  if (pool && !member.isNonPlayer) {
+    try {
+      const result = await pool.query<UnmatchedPlayer>(
+        `SELECT p.id, p.display_name, t.name AS team_name
+         FROM players p
+         LEFT JOIN player_team_seasons pts
+           ON pts.player_id = p.id
+           AND pts.season_id = (SELECT id FROM seasons WHERE is_active = true LIMIT 1)
+         LEFT JOIN teams t ON t.id = pts.team_id
+         WHERE p.active = true
+           AND p.id NOT IN (
+             SELECT c.main_db_player_id
+             FROM club_members c
+             WHERE c.main_db_player_id IS NOT NULL
+               AND c.id != $1
+           )
+         ORDER BY p.display_name`,
+        [id]
+      )
+      unmatchedPlayers = result.rows
+    } catch {
+      // Main DB unavailable — fall back to manual UUID input only
+    }
+  }
+
   const action = updateClubMember.bind(null, id)
+
+  const showLinkingSection = !member.isNonPlayer
+  const isNotFound = member.mainDbStatus === 'not_found' || member.mainDbStatus === 'pending'
 
   return (
     <div className="p-6 max-w-xl mx-auto">
@@ -39,7 +73,7 @@ export default async function EditMemberPage({
         description="Update member details and database linking."
       />
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 space-y-5">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
         <form action={action} className="space-y-4">
 
           {/* Basic details */}
@@ -79,10 +113,11 @@ export default async function EditMemberPage({
           <hr className="border-slate-200" />
 
           {/* Main DB linking */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-800 mb-3">Main Database Linking</h3>
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-slate-800">Main Database Linking</h3>
 
-            <label className="flex items-start gap-3 mb-4 cursor-pointer">
+            {/* Non-player toggle */}
+            <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 name="is_non_player"
@@ -92,34 +127,73 @@ export default async function EditMemberPage({
               <div>
                 <span className="text-sm font-medium text-slate-700">Non-player (exclude from reconciliation)</span>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Use for club volunteers, dedicated umpires, or committee members who are not registered
-                  players in the main database. They will show as "Non-player" instead of "Not in main DB".
+                  Use for club volunteers, committee members, or dedicated umpires who are not
+                  registered players in the main database.
                 </p>
               </div>
             </label>
 
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-700">
-                Manual player ID override
-              </label>
-              <input
-                type="text"
-                name="manual_player_id"
-                defaultValue={member.manualPlayerLink ? (member.mainDbPlayerId ?? '') : ''}
-                placeholder="Paste player UUID from main database…"
-                className="w-full text-sm px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-              />
-              <p className="text-xs text-slate-500">
-                Use when automatic name-matching fails (e.g. spelling differs). Leave blank to use
-                name matching. Clears any existing manual link if left empty.
-              </p>
-              {member.mainDbPlayerId && (
-                <p className="text-xs text-slate-400 mt-1">
-                  Current: <code className="bg-slate-100 px-1 rounded">{member.mainDbPlayerId}</code>
-                  {member.manualPlayerLink && <span className="ml-2 text-amber-600">(manually set)</span>}
+            {/* Current link status */}
+            {member.mainDbPlayerId && (
+              <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-800">
+                Currently linked to player ID{' '}
+                <code className="bg-green-100 px-1 rounded font-mono">{member.mainDbPlayerId}</code>
+                {member.currentTeamName && <span> · <strong>{member.currentTeamName}</strong></span>}
+                {member.manualPlayerLink && <span className="ml-2 text-amber-700">(manually set)</span>}
+              </div>
+            )}
+
+            {/* Unmatched player picker — only shown when main DB is reachable */}
+            {unmatchedPlayers.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  {isNotFound
+                    ? 'Pick the correct player from the main database'
+                    : 'Re-link to a different player'}
+                </label>
+                {isNotFound && (
+                  <p className="text-xs text-slate-500 mb-2">
+                    These are players in the main database not yet linked to anyone. Pick the one
+                    that matches <strong>{member.firstName} {member.lastName}</strong>.
+                  </p>
+                )}
+                <select
+                  name="player_select"
+                  defaultValue=""
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">— No selection —</option>
+                  {unmatchedPlayers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name}{p.team_name ? ` (${p.team_name})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Manual UUID fallback */}
+            {showLinkingSection && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  {unmatchedPlayers.length > 0
+                    ? 'Or enter player UUID directly'
+                    : 'Manual player ID override'}
+                </label>
+                <input
+                  type="text"
+                  name="manual_player_id"
+                  defaultValue={member.manualPlayerLink ? (member.mainDbPlayerId ?? '') : ''}
+                  placeholder="Paste player UUID from main database…"
+                  className="w-full text-sm px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  {unmatchedPlayers.length > 0
+                    ? 'The dropdown above takes priority if both are filled.'
+                    : 'Use when automatic name-matching fails. Leave blank to use name matching.'}
                 </p>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">
