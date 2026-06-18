@@ -55,7 +55,9 @@ const STATUS_STYLES: Record<string, string> = {
   ended: 'bg-slate-100 text-slate-600',
   // Communications
   published: 'bg-green-100 text-green-800',
-  // (under_review already defined above)
+  // Main DB reconciliation
+  linked: 'bg-green-100 text-green-800',
+  not_found: 'bg-red-100 text-red-700',
 }
 
 const LABEL_MAP: Record<string, string> = {
@@ -66,6 +68,7 @@ const LABEL_MAP: Record<string, string> = {
   needs_replacement: 'Needs replacement',
   reporting_due: 'Reporting due',
   renewal_due: 'Renewal due',
+  not_found: 'Not in main DB',
 }
 
 export function StatusBadge({ status }: { status: string }) {

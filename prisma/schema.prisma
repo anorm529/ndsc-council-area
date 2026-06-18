@@ -488,15 +488,21 @@ model ClubMember {
   email       String?
   yearOfBirth Int?      @map("year_of_birth")
   postcode    String?
-  gender      String?
-  isRookie    Boolean   @default(false) @map("is_rookie")
-  isUmpire    Boolean   @default(false) @map("is_umpire")
-  isActive    Boolean   @default(true) @map("is_active")
-  importedAt  DateTime? @map("imported_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  gender          String?
+  isRookie        Boolean   @default(false) @map("is_rookie")
+  isUmpire        Boolean   @default(false) @map("is_umpire")
+  isActive        Boolean   @default(true) @map("is_active")
+  mainDbPlayerId  String?   @map("main_db_player_id")
+  mainDbStatus    String    @default("pending") @map("main_db_status")
+  currentTeamId   String?   @map("current_team_id")
+  currentTeamName String?   @map("current_team_name")
+  linkedAt        DateTime? @map("linked_at")
+  importedAt      DateTime? @map("imported_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@index([lastName])
   @@index([isActive])
+  @@index([mainDbStatus])
   @@map("club_members")
 }
