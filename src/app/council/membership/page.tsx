@@ -189,7 +189,7 @@ export default async function MembershipPage({
             name="q"
             defaultValue={q}
             placeholder="Search name, email, postcode, team…"
-            className="flex-1 text-sm px-3 py-1.5 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 text-sm text-slate-900 placeholder:text-slate-400 px-3 py-1.5 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {q && (
             <a

@@ -172,7 +172,7 @@ export default async function EditMemberPage({
                 <select
                   name="player_select"
                   defaultValue=""
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">— No selection —</option>
                   {unmatchedPlayers.map((p) => (
@@ -197,7 +197,7 @@ export default async function EditMemberPage({
                   name="manual_player_id"
                   defaultValue={member.manualPlayerLink ? (member.mainDbPlayerId ?? '') : ''}
                   placeholder="Paste player UUID from main database…"
-                  className="w-full text-sm px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  className="w-full text-sm text-slate-900 placeholder:text-slate-400 px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                 />
                 <p className="text-xs text-slate-500 mt-1">
                   {unmatchedPlayers.length > 0

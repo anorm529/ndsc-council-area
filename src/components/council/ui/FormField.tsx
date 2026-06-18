@@ -30,7 +30,7 @@ export function FormField({
         required={required}
         defaultValue={defaultValue}
         placeholder={placeholder}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       />
       {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
@@ -65,7 +65,7 @@ export function SelectField({
         name={name}
         required={required}
         defaultValue={defaultValue ?? ''}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
       >
         {placeholder && <option value="">{placeholder}</option>}
         {options.map((o) => (
@@ -110,7 +110,7 @@ export function TextareaField({
         defaultValue={defaultValue}
         placeholder={placeholder}
         rows={rows}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
       />
       {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
