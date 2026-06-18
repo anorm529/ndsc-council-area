@@ -6,6 +6,7 @@ import { canManageSettings } from '@/lib/permissions'
 import { PageHeader } from '@/components/council/ui/PageHeader'
 import { createCouncilMember, deactivateCouncilMember } from '@/lib/actions/settings'
 import { FormField, SelectField, SubmitButton } from '@/components/council/ui/FormField'
+import { ConfirmButton } from '@/components/council/ui/ConfirmButton'
 
 export const metadata: Metadata = { title: 'Settings' }
 
@@ -80,17 +81,12 @@ export default async function SettingsPage() {
                       {canManage && (
                         <td className="px-4 py-3 text-right">
                           {m.isActive && (
-                            <form action={deactivate} className="inline">
-                              <button
-                                type="submit"
-                                className="text-xs text-red-500 hover:underline"
-                                onClick={(e) => {
-                                  if (!confirm(`Deactivate ${m.name}?`)) e.preventDefault()
-                                }}
-                              >
-                                Deactivate
-                              </button>
-                            </form>
+                            <ConfirmButton
+                              action={deactivate}
+                              message={`Deactivate ${m.name}?`}
+                              label="Deactivate"
+                              className="text-xs text-red-500 hover:underline"
+                            />
                           )}
                         </td>
                       )}

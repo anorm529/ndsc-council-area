@@ -11,6 +11,7 @@ import {
   deactivateClubMember,
   reconcileClubMembers,
 } from '@/lib/actions/membership'
+import { ConfirmButton } from '@/components/council/ui/ConfirmButton'
 
 export const metadata: Metadata = { title: 'Membership' }
 
@@ -261,17 +262,12 @@ export default async function MembershipPage({
                       </td>
                       <td className="px-4 py-3 text-right">
                         {m.isActive && (
-                          <form action={deactivate} className="inline">
-                            <button
-                              type="submit"
-                              className="text-xs text-red-500 hover:underline"
-                              onClick={(e) => {
-                                if (!confirm(`Deactivate ${m.firstName} ${m.lastName}?`)) e.preventDefault()
-                              }}
-                            >
-                              Deactivate
-                            </button>
-                          </form>
+                          <ConfirmButton
+                            action={deactivate}
+                            message={`Deactivate ${m.firstName} ${m.lastName}?`}
+                            label="Deactivate"
+                            className="text-xs text-red-500 hover:underline"
+                          />
                         )}
                       </td>
                     </tr>
