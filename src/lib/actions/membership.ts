@@ -7,70 +7,70 @@ import { requireCouncilAccess } from '@/lib/auth'
 import { getMainPool } from '@/lib/main-db'
 
 // ---------------------------------------------------------------------------
-// Internal reconciliation — no auth check, no redirect
+// Internal reconciliation — no auth, no redirect, never throws
 // ---------------------------------------------------------------------------
 async function performReconciliation() {
   const pool = getMainPool()
-  if (!pool) return // MAIN_DATABASE_URL not configured — skip silently
+  if (!pool) return
 
-  const members = await prisma.clubMember.findMany({
-    select: { id: true, firstName: true, lastName: true },
-  })
-  if (members.length === 0) return
+  try {
+    const members = await prisma.clubMember.findMany({
+      select: { id: true, firstName: true, lastName: true },
+    })
+    if (members.length === 0) return
 
-  // Build normalised name → member id map
-  const nameToMemberId = new Map<string, string>()
-  for (const m of members) {
-    const key = `${m.firstName} ${m.lastName}`.toLowerCase().trim()
-    nameToMemberId.set(key, m.id)
-  }
-
-  const normalizedNames = Array.from(nameToMemberId.keys())
-
-  // 1. Find matching players by normalized_name
-  const playerResult = await pool.query<{ id: string; normalized_name: string }>(
-    `SELECT id, normalized_name FROM players WHERE normalized_name = ANY($1::text[])`,
-    [normalizedNames]
-  )
-
-  const nameToPlayerId = new Map<string, string>()
-  for (const row of playerResult.rows) {
-    nameToPlayerId.set(row.normalized_name, row.id)
-  }
-
-  // 2. Get active season id
-  const seasonResult = await pool.query<{ id: string }>(
-    `SELECT id FROM seasons WHERE is_active = true LIMIT 1`
-  )
-  const activeSeasonId = seasonResult.rows[0]?.id ?? null
-
-  // 3. Get team assignments for matched players in the active season
-  const matchedPlayerIds = playerResult.rows.map((r) => r.id)
-  const playerIdToTeam = new Map<string, { teamId: string; teamName: string }>()
-
-  if (matchedPlayerIds.length > 0 && activeSeasonId) {
-    const teamResult = await pool.query<{
-      player_id: string
-      team_id: string
-      team_name: string
-    }>(
-      `SELECT pts.player_id, t.id AS team_id, t.name AS team_name
-       FROM player_team_seasons pts
-       JOIN teams t ON t.id = pts.team_id
-       WHERE pts.player_id = ANY($1::uuid[])
-         AND pts.season_id = $2`,
-      [matchedPlayerIds, activeSeasonId]
-    )
-    for (const row of teamResult.rows) {
-      playerIdToTeam.set(row.player_id, { teamId: row.team_id, teamName: row.team_name })
+    // normalised name → member id
+    const nameToMemberId = new Map<string, string>()
+    for (const m of members) {
+      const key = `${m.firstName.trim()} ${m.lastName.trim()}`.toLowerCase()
+      nameToMemberId.set(key, m.id)
     }
-  }
 
-  // 4. Batch-update every club member
-  const now = new Date()
-  await Promise.all(
-    members.map((m) => {
-      const key = `${m.firstName} ${m.lastName}`.toLowerCase().trim()
+    const normalizedNames = Array.from(nameToMemberId.keys())
+
+    // 1. Match players by normalized_name
+    const playerResult = await pool.query<{ id: string; normalized_name: string }>(
+      `SELECT id, normalized_name FROM players WHERE normalized_name = ANY($1::text[])`,
+      [normalizedNames]
+    )
+
+    const nameToPlayerId = new Map<string, string>()
+    for (const row of playerResult.rows) {
+      nameToPlayerId.set(row.normalized_name, row.id)
+    }
+
+    // 2. Active season
+    const seasonResult = await pool.query<{ id: string }>(
+      `SELECT id FROM seasons WHERE is_active = true LIMIT 1`
+    )
+    const activeSeasonId = seasonResult.rows[0]?.id ?? null
+
+    // 3. Team assignments for matched players in active season
+    const matchedPlayerIds = playerResult.rows.map((r) => r.id)
+    const playerIdToTeam = new Map<string, { teamId: string; teamName: string }>()
+
+    if (matchedPlayerIds.length > 0 && activeSeasonId) {
+      const teamResult = await pool.query<{
+        player_id: string
+        team_id: string
+        team_name: string
+      }>(
+        `SELECT pts.player_id, t.id AS team_id, t.name AS team_name
+         FROM player_team_seasons pts
+         JOIN teams t ON t.id = pts.team_id
+         WHERE pts.player_id = ANY($1::uuid[])
+           AND pts.season_id = $2`,
+        [matchedPlayerIds, activeSeasonId]
+      )
+      for (const row of teamResult.rows) {
+        playerIdToTeam.set(row.player_id, { teamId: row.team_id, teamName: row.team_name })
+      }
+    }
+
+    // 4. Build update payloads
+    const now = new Date()
+    const updates = members.map((m) => {
+      const key = `${m.firstName.trim()} ${m.lastName.trim()}`.toLowerCase()
       const playerId = nameToPlayerId.get(key) ?? null
 
       if (playerId) {
@@ -97,7 +97,13 @@ async function performReconciliation() {
         })
       }
     })
-  )
+
+    // 5. Run in a single transaction instead of parallel queries
+    await prisma.$transaction(updates)
+  } catch (err) {
+    // Log but don't crash the caller — reconciliation is best-effort
+    console.error('[reconcile] failed:', err)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +166,7 @@ export async function importClubMembers(formData: FormData) {
       gender: (row['gender'] ?? row['Gender'] ?? row['sex'] ?? row['Sex'] ?? '').trim() || null,
       isRookie: parseBool(row['is_rookie'] ?? row['Rookie'] ?? row['rookie'] ?? ''),
       isUmpire: parseBool(row['is_umpire'] ?? row['Umpire'] ?? row['umpire'] ?? ''),
+      isActive: parseBoolDefault(row['is_active'] ?? row['Is Active'] ?? row['active'] ?? '', true),
       importedAt: now,
     }))
     .filter((m) => m.firstName || m.lastName)
@@ -210,7 +217,11 @@ export async function createMembershipSnapshot(formData: FormData) {
 // ---------------------------------------------------------------------------
 
 function parseCSV(text: string): Record<string, string>[] {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter((l) => l.trim())
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .filter((l) => l.trim())
   if (lines.length < 2) return []
   const headers = parseLine(lines[0])
   const rows: Record<string, string>[] = []
@@ -244,10 +255,19 @@ function parseLine(line: string): string[] {
 }
 
 function parseIntOrNull(val: string): number | null {
-  const n = parseInt(val)
+  if (!val) return null
+  const n = parseInt(val.trim())
   return isNaN(n) ? null : n
 }
 
+// Yes/yes/true/1/y → true, No/no/false/0/n/empty → false
 function parseBool(val: string): boolean {
-  return ['true', 'yes', '1', 'y'].includes(val.toLowerCase().trim())
+  return ['true', 'yes', '1', 'y'].includes((val ?? '').toLowerCase().trim())
+}
+
+// Same but with a configurable default for missing/empty values
+function parseBoolDefault(val: string, defaultVal: boolean): boolean {
+  const v = (val ?? '').toLowerCase().trim()
+  if (!v) return defaultVal
+  return ['true', 'yes', '1', 'y'].includes(v)
 }
