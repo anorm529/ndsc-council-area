@@ -16,9 +16,9 @@ import { ConfirmButton } from '@/components/council/ui/ConfirmButton'
 export const metadata: Metadata = { title: 'Membership' }
 
 const TEAM_COLOURS: Record<string, string> = {
-  buccaneers: 'bg-blue-100 text-blue-800',
-  barracudas: 'bg-red-100 text-red-800',
-  sluggers:   'bg-green-100 text-green-800',
+  buccaneers: 'bg-yellow-100 text-yellow-800',
+  barracudas: 'bg-blue-100 text-blue-800',
+  sluggers:   'bg-red-100 text-red-800',
 }
 
 function TeamBadge({ name }: { name: string }) {

@@ -9,9 +9,9 @@ import { formatDate } from '@/lib/utils'
 export const metadata: Metadata = { title: 'Team Reports' }
 
 const TEAMS = [
-  { slug: 'buccaneers', label: 'Buccaneers', color: 'bg-blue-50 text-blue-700' },
-  { slug: 'barracudas', label: 'Barracudas', color: 'bg-red-50 text-red-700' },
-  { slug: 'sluggers', label: 'Sluggers', color: 'bg-green-50 text-green-700' },
+  { slug: 'buccaneers', label: 'Buccaneers', color: 'bg-yellow-50 text-yellow-700' },
+  { slug: 'barracudas', label: 'Barracudas', color: 'bg-blue-50 text-blue-700' },
+  { slug: 'sluggers', label: 'Sluggers', color: 'bg-red-50 text-red-700' },
 ]
 
 function TeamBadge({ slug }: { slug: string }) {
